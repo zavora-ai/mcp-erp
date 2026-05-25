@@ -1,0 +1,267 @@
+server_id = "mcp_erp"
+display_name = "ERP"
+version = "1.0.0"
+domain = "business-systems"
+sdk_version = "0.1.0"
+risk_level = "high"
+writes_allowed = "gated"
+transports = ["stdio"]
+credentials = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+governance_gates = ["erp-write-policy", "financial-action-policy"]
+environments = ["development", "staging", "production"]
+
+# ─── Customers ────────────────────────────────────────────────────────────────
+
+[[tools]]
+name = "list_customers"
+description = "List customers with optional filters"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "get_customer"
+description = "Get a customer by ID"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "create_customer"
+description = "Create a new customer record"
+risk_class = "internal_write"
+requires_approval = true
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "update_customer"
+description = "Update an existing customer record"
+risk_class = "internal_write"
+requires_approval = true
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+# ─── Vendors ──────────────────────────────────────────────────────────────────
+
+[[tools]]
+name = "list_vendors"
+description = "List vendors/suppliers with optional filters"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "get_vendor"
+description = "Get a vendor by ID"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "create_vendor"
+description = "Create a new vendor/supplier record"
+risk_class = "internal_write"
+requires_approval = true
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "update_vendor"
+description = "Update an existing vendor record"
+risk_class = "internal_write"
+requires_approval = true
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+# ─── Products ─────────────────────────────────────────────────────────────────
+
+[[tools]]
+name = "list_products"
+description = "List products/items with optional filters"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "get_product"
+description = "Get a product by ID"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "create_product"
+description = "Create a new product/item record"
+risk_class = "internal_write"
+requires_approval = true
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "update_product"
+description = "Update an existing product record"
+risk_class = "internal_write"
+requires_approval = true
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+# ─── Sales Orders ─────────────────────────────────────────────────────────────
+
+[[tools]]
+name = "list_sales_orders"
+description = "List sales orders with optional filters"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "get_sales_order"
+description = "Get a sales order by ID with line items"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "create_sales_order_draft"
+description = "Create a sales order in draft state"
+risk_class = "internal_write"
+requires_approval = false
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "submit_sales_order"
+description = "Submit a draft sales order for approval/release"
+risk_class = "external_write"
+requires_approval = true
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+# ─── Purchase Orders ──────────────────────────────────────────────────────────
+
+[[tools]]
+name = "list_purchase_orders"
+description = "List purchase orders with optional filters"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "get_purchase_order"
+description = "Get a purchase order by ID with line items"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "create_purchase_order_draft"
+description = "Create a purchase order in draft state"
+risk_class = "internal_write"
+requires_approval = false
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "submit_purchase_order"
+description = "Submit a draft purchase order for approval/release"
+risk_class = "external_write"
+requires_approval = true
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+# ─── Invoices ─────────────────────────────────────────────────────────────────
+
+[[tools]]
+name = "list_invoices"
+description = "List invoices with optional filters"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "get_invoice"
+description = "Get an invoice by ID with line items and payment status"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "create_invoice_draft"
+description = "Create an invoice in draft state"
+risk_class = "internal_write"
+requires_approval = false
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "submit_invoice"
+description = "Submit a draft invoice for approval"
+risk_class = "financial_action"
+requires_approval = true
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "post_invoice"
+description = "Post an approved invoice to the ledger"
+risk_class = "financial_action"
+requires_approval = true
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+# ─── Inventory ────────────────────────────────────────────────────────────────
+
+[[tools]]
+name = "get_stock_levels"
+description = "Get current stock levels for products"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "adjust_stock"
+description = "Adjust stock quantity for a product (increase/decrease)"
+risk_class = "internal_write"
+requires_approval = true
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "transfer_stock"
+description = "Transfer stock between warehouses/locations"
+risk_class = "internal_write"
+requires_approval = true
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+# ─── General Ledger (read-only) ───────────────────────────────────────────────
+
+[[tools]]
+name = "list_accounts"
+description = "List chart of accounts"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "get_journal_entries"
+description = "Get journal entries for a date range"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "get_trial_balance"
+description = "Get trial balance for a period"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+# ─── Governance ───────────────────────────────────────────────────────────────
+
+[[tools]]
+name = "request_erp_approval"
+description = "Request approval for a pending ERP document (order, invoice, etc.)"
+risk_class = "internal_write"
+requires_approval = false
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "attach_erp_evidence"
+description = "Attach supporting evidence/documents to an ERP record"
+risk_class = "internal_write"
+requires_approval = false
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]
+
+[[tools]]
+name = "get_erp_audit_trail"
+description = "Get the audit trail/history for an ERP document"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = ["vault://zoho-oauth-token", "vault://odoo-session", "vault://bc-oauth-token", "vault://netsuite-oauth", "vault://sap-oauth-token"]

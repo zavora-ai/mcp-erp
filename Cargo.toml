@@ -1,6 +1,6 @@
 [package]
 name = "mcp-erp"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2024"
 authors = ["James Karanja <james.karanja@zavora.ai>"]
 description = "Enterprise ERP MCP Server — unified access to SAP S/4HANA, NetSuite, Odoo, Zoho Books, and Microsoft Dynamics 365 Business Central with lifecycle-based document management"

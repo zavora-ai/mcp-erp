@@ -225,6 +225,132 @@ pub trait ErpBackend: Send + Sync {
 
     // Governance
     async fn get_audit_trail(&self, entity_type: &str, entity_id: &str) -> anyhow::Result<Vec<AuditEntry>>;
+
+    // ─── Accounting extensions ───────────────────────────────────────────────
+    // Full-ledger operations (vendor bills, payments, financial reports, GL
+    // posting). Backends that don't expose these return the default error;
+    // results are raw backend JSON since shapes vary too much to unify.
+
+    async fn list_bills(&self, _limit: u32, _status: Option<&str>) -> anyhow::Result<serde_json::Value> {
+        Err(anyhow::anyhow!("{}: vendor bills not supported by this backend", self.name()))
+    }
+    async fn get_bill(&self, _id: &str) -> anyhow::Result<serde_json::Value> {
+        Err(anyhow::anyhow!("{}: vendor bills not supported by this backend", self.name()))
+    }
+    async fn create_bill_draft(&self, _input: &CreateBillInput) -> anyhow::Result<serde_json::Value> {
+        Err(anyhow::anyhow!("{}: vendor bills not supported by this backend", self.name()))
+    }
+    async fn post_bill(&self, _id: &str) -> anyhow::Result<serde_json::Value> {
+        Err(anyhow::anyhow!("{}: vendor bills not supported by this backend", self.name()))
+    }
+    async fn list_payments(&self, _limit: u32) -> anyhow::Result<serde_json::Value> {
+        Err(anyhow::anyhow!("{}: payments not supported by this backend", self.name()))
+    }
+    async fn record_payment(&self, _input: &RecordPaymentInput) -> anyhow::Result<serde_json::Value> {
+        Err(anyhow::anyhow!("{}: payments not supported by this backend", self.name()))
+    }
+    async fn run_report(&self, _report_type: &str, _as_at: Option<&str>, _from: Option<&str>, _to: Option<&str>) -> anyhow::Result<serde_json::Value> {
+        Err(anyhow::anyhow!("{}: financial reports not supported by this backend", self.name()))
+    }
+    async fn get_dashboard(&self) -> anyhow::Result<serde_json::Value> {
+        Err(anyhow::anyhow!("{}: dashboard not supported by this backend", self.name()))
+    }
+    async fn list_bank_accounts(&self) -> anyhow::Result<serde_json::Value> {
+        Err(anyhow::anyhow!("{}: bank accounts not supported by this backend", self.name()))
+    }
+    async fn post_journal_entry(&self, _input: &PostJournalInput) -> anyhow::Result<serde_json::Value> {
+        Err(anyhow::anyhow!("{}: journal posting not supported by this backend", self.name()))
+    }
+}
+
+/// Input for creating a vendor bill draft.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CreateBillInput {
+    pub vendor_id: String,
+    /// The supplier's own invoice number (the legal document reference).
+    #[serde(default)]
+    pub vendor_invoice_number: Option<String>,
+    /// ISO date (YYYY-MM-DD); defaults to today.
+    #[serde(default)]
+    pub issue_date: Option<String>,
+    #[serde(default)]
+    pub due_date: Option<String>,
+    /// ISO 4217 code; defaults to the vendor's currency.
+    #[serde(default)]
+    pub currency: Option<String>,
+    /// Spot rate to functional currency for FCY bills.
+    #[serde(default)]
+    pub fx_rate: Option<f64>,
+    pub line_items: Vec<LineItemInput>,
+    #[serde(default)]
+    pub notes: Option<String>,
+}
+
+/// One document a payment settles.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PaymentApplicationInput {
+    /// Invoice or bill id.
+    pub document_id: String,
+    /// Amount applied, in the payment currency.
+    pub amount: f64,
+}
+
+/// Input for recording a payment (customer receipt or vendor payment).
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RecordPaymentInput {
+    /// "customer_payment" (money in) or "vendor_payment" (money out).
+    pub payment_type: String,
+    /// Customer or vendor id.
+    pub party_id: String,
+    /// ISO date (YYYY-MM-DD); defaults to today.
+    #[serde(default)]
+    pub payment_date: Option<String>,
+    pub amount: f64,
+    #[serde(default)]
+    pub currency: Option<String>,
+    #[serde(default)]
+    pub fx_rate: Option<f64>,
+    /// "bank_transfer" | "mpesa" | "cash" | "cheque".
+    pub method: String,
+    #[serde(default)]
+    pub reference: Option<String>,
+    #[serde(default)]
+    pub bank_account_id: Option<String>,
+    #[serde(default)]
+    pub applications: Vec<PaymentApplicationInput>,
+    /// Withholding tax deducted at source, in functional currency (KES).
+    #[serde(default)]
+    pub wht_amount: Option<f64>,
+    /// GL account funding a non-cash payment (e.g. a director's loan account).
+    #[serde(default)]
+    pub funding_account: Option<String>,
+}
+
+/// One GL line of a manual journal entry.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct JournalLineInput {
+    pub account_code: String,
+    #[serde(default)]
+    pub debit: Option<f64>,
+    #[serde(default)]
+    pub credit: Option<f64>,
+    /// ISO 4217 code; defaults to the functional currency.
+    #[serde(default)]
+    pub currency: Option<String>,
+    #[serde(default)]
+    pub fx_rate: Option<f64>,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+/// Input for posting a balanced manual journal entry.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PostJournalInput {
+    /// ISO date (YYYY-MM-DD).
+    pub date: String,
+    pub reference: String,
+    pub description: String,
+    pub lines: Vec<JournalLineInput>,
 }
 
 /// Input for creating line items (used in order/invoice creation).

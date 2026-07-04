@@ -1,6 +1,6 @@
 //! MCP tool router for ERP operations.
 use adk_mcp_sdk::{HealthCheck, HealthStatus};
-use crate::types::{ErpBackend, LineItemInput};
+use crate::types::{CreateBillInput, ErpBackend, LineItemInput, PostJournalInput, RecordPaymentInput};
 use rmcp::{handler::server::wrapper::Parameters, schemars, tool, tool_router};
 use serde::Deserialize;
 use std::sync::Arc;
@@ -148,6 +148,30 @@ pub struct EvidenceInput {
 pub struct AuditInput {
     pub entity_type: String,
     pub entity_id: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListBillsInput {
+    #[serde(default = "d20")]
+    pub limit: u32,
+    /// Filter by bill status (e.g. draft, posted, paid).
+    #[serde(default)]
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct RunReportInput {
+    /// Report type, e.g. TrialBalance, BalanceSheet, ProfitAndLoss, CashFlow, ArAgeing, ApAgeing, VatReturn, GlDetail.
+    pub report_type: String,
+    /// Point-in-time date (YYYY-MM-DD) for balance-style reports.
+    #[serde(default)]
+    pub as_at: Option<String>,
+    /// Period start (YYYY-MM-DD) for period reports like ProfitAndLoss.
+    #[serde(default)]
+    pub from: Option<String>,
+    /// Period end (YYYY-MM-DD) for period reports.
+    #[serde(default)]
+    pub to: Option<String>,
 }
 
 fn d20() -> u32 { 20 }
@@ -441,6 +465,88 @@ impl ErpServer {
     #[tool(description = "Get the audit trail/history for an ERP document")]
     async fn get_erp_audit_trail(&self, Parameters(i): Parameters<AuditInput>) -> String {
         match self.backend.get_audit_trail(&i.entity_type, &i.entity_id).await {
+            Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    // ─── Accounting (AP bills, payments, reports, GL posting) ───────────────
+
+    #[tool(description = "List vendor bills (accounts payable), optionally filtered by status (draft/posted/paid)")]
+    async fn list_bills(&self, Parameters(i): Parameters<ListBillsInput>) -> String {
+        match self.backend.list_bills(i.limit, i.status.as_deref()).await {
+            Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "Get a vendor bill by ID with line items")]
+    async fn get_bill(&self, Parameters(i): Parameters<IdInput>) -> String {
+        match self.backend.get_bill(&i.id).await {
+            Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "Create a vendor bill in draft state (record a supplier invoice)")]
+    async fn create_bill_draft(&self, Parameters(i): Parameters<CreateBillInput>) -> String {
+        match self.backend.create_bill_draft(&i).await {
+            Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "Post a draft vendor bill to the general ledger (creates the AP journal entry)")]
+    async fn post_bill(&self, Parameters(i): Parameters<IdInput>) -> String {
+        match self.backend.post_bill(&i.id).await {
+            Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "List payments (customer receipts and vendor payments)")]
+    async fn list_payments(&self, Parameters(i): Parameters<ListInput>) -> String {
+        match self.backend.list_payments(i.limit).await {
+            Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "Record a payment: customer receipt (money in) or vendor payment (money out), with optional invoice/bill applications and withholding tax")]
+    async fn record_payment(&self, Parameters(i): Parameters<RecordPaymentInput>) -> String {
+        match self.backend.record_payment(&i).await {
+            Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "Run a financial report. Types: TrialBalance, BalanceSheet, ProfitAndLoss, CashFlow, ArAgeing, ApAgeing, VatReturn, GlDetail, IncomeByCustomer, ExpenseByVendor, EquityChanges. Use as_at for point-in-time reports, from/to for period reports")]
+    async fn run_report(&self, Parameters(i): Parameters<RunReportInput>) -> String {
+        match self.backend.run_report(&i.report_type, i.as_at.as_deref(), i.from.as_deref(), i.to.as_deref()).await {
+            Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "Get the business dashboard: cash position, receivables, payables, recent activity")]
+    async fn get_dashboard(&self) -> String {
+        match self.backend.get_dashboard().await {
+            Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "List bank and mobile-money accounts with balances")]
+    async fn list_bank_accounts(&self) -> String {
+        match self.backend.list_bank_accounts().await {
+            Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "Post a balanced manual journal entry to the general ledger. Debits must equal credits")]
+    async fn post_journal_entry(&self, Parameters(i): Parameters<PostJournalInput>) -> String {
+        match self.backend.post_journal_entry(&i).await {
             Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
             Err(e) => format!("Error: {e}"),
         }

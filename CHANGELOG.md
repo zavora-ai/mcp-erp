@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.1.0] - 2026-07-04
+
+### Added
+- **Zavora ERA backend** (`--features zavora`) — JWT email/password auth with
+  automatic re-login (15-minute access TTL), tenant scoping from the token,
+  and REST mapping for customers, vendors, products, invoices, and the GL
+- **Accounting extension tools (10)** on the `ErpBackend` trait as
+  default-error methods (existing backends unaffected): `list_bills`,
+  `get_bill`, `create_bill_draft`, `post_bill`, `list_payments`,
+  `record_payment` (document applications, Kenyan KES-denominated withholding
+  tax, non-cash funding accounts), `run_report`, `get_dashboard`,
+  `list_bank_accounts`, `post_journal_entry` — 44 tools total
+
+### Fixed
+- `mcp-server.toml` lookup now falls back to the crate root relative to the
+  executable, so the server can be spawned from any working directory (e.g.
+  by an MCP server manager)
+
 ## [1.0.0] - 2026-05-25
 
 ### Added

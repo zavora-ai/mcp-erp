@@ -564,4 +564,79 @@ impl ErpBackend for ZavoraBackend {
         });
         self.post("journal-entries", &body).await
     }
+
+    // ─── HR & Payroll (Zavora-native) ───────────────────────────────────────
+
+    async fn list_employees(&self, limit: u32) -> Result<Value> {
+        self.get(&format!("employees?limit={limit}")).await
+    }
+
+    async fn list_fiscal_periods(&self) -> Result<Value> {
+        self.get("periods").await
+    }
+
+    async fn list_departments(&self) -> Result<Value> {
+        self.get("payroll/departments").await
+    }
+
+    async fn list_pay_runs(&self) -> Result<Value> {
+        self.get("payroll").await
+    }
+
+    async fn get_pay_run(&self, id: &str) -> Result<Value> {
+        self.get(&format!("payroll/{id}")).await
+    }
+
+    async fn run_payroll(&self, period_id: &str, pay_date: &str) -> Result<Value> {
+        let body = json!({
+            "period_id": period_id,
+            "pay_date": pay_date,
+            "run_by": {"type": "Agent", "id": "amos"},
+        });
+        self.post("payroll/run", &body).await
+    }
+
+    async fn add_pay_run_input(&self, run_id: &str, input: &PayRunInputInput) -> Result<Value> {
+        let body = json!({
+            "employee_id": input.employee_id,
+            "kind": input.kind,
+            "name": input.name,
+            "amount": input.amount,
+            "taxable": input.taxable,
+            "type_code": input.type_code,
+        });
+        self.post(&format!("payroll/{run_id}/inputs"), &body).await
+    }
+
+    async fn recompute_pay_run(&self, id: &str) -> Result<Value> {
+        self.post_action(&format!("payroll/{id}/recompute")).await
+    }
+
+    async fn approve_pay_run(&self, id: &str) -> Result<Value> {
+        self.post_action(&format!("payroll/{id}/approve")).await
+    }
+
+    async fn post_pay_run(&self, id: &str) -> Result<Value> {
+        self.post_action(&format!("payroll/{id}/post")).await
+    }
+
+    async fn mark_pay_run_paid(&self, id: &str) -> Result<Value> {
+        self.post_action(&format!("payroll/{id}/paid")).await
+    }
+
+    // ─── Procurement (P2P) ───────────────────────────────────────────────────
+    async fn list_requisitions(&self) -> Result<Value> { self.get("requisitions").await }
+    async fn create_requisition(&self, body: &Value) -> Result<Value> { self.post("requisitions", body).await }
+    async fn approve_requisition(&self, id: &str) -> Result<Value> { self.post_action(&format!("requisitions/{id}/approve")).await }
+    async fn convert_requisition(&self, id: &str, body: &Value) -> Result<Value> { self.post(&format!("requisitions/{id}/convert"), body).await }
+    async fn create_direct_po(&self, body: &Value) -> Result<Value> { self.post("purchase-orders", body).await }
+    async fn send_purchase_order(&self, id: &str, body: &Value) -> Result<Value> { self.post(&format!("purchase-orders/{id}/send"), body).await }
+    async fn receive_goods(&self, po_id: &str, body: &Value) -> Result<Value> { self.post(&format!("purchase-orders/{po_id}/receipts"), body).await }
+    async fn three_way_match(&self, po_id: &str) -> Result<Value> { self.get(&format!("purchase-orders/{po_id}/match")).await }
+    async fn create_debit_note(&self, body: &Value) -> Result<Value> { self.post("debit-notes", body).await }
+    async fn list_expense_claims(&self) -> Result<Value> { self.get("expense-claims").await }
+    async fn create_expense_claim(&self, body: &Value) -> Result<Value> { self.post("expense-claims", body).await }
+    async fn approve_expense_claim(&self, id: &str) -> Result<Value> { self.post_action(&format!("expense-claims/{id}/approve")).await }
+    async fn procurement_analytics(&self) -> Result<Value> { self.get("procurement/analytics").await }
+    async fn budget_control(&self) -> Result<Value> { self.get("procurement/budget-control").await }
 }

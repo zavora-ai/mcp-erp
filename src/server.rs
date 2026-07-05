@@ -1,6 +1,6 @@
 //! MCP tool router for ERP operations.
 use adk_mcp_sdk::{HealthCheck, HealthStatus};
-use crate::types::{CreateBillInput, ErpBackend, LineItemInput, PostJournalInput, RecordPaymentInput};
+use crate::types::{CreateBillInput, ErpBackend, LineItemInput, PayRunInputInput, PostJournalInput, RecordPaymentInput};
 use rmcp::{handler::server::wrapper::Parameters, schemars, tool, tool_router};
 use serde::Deserialize;
 use std::sync::Arc;
@@ -176,11 +176,52 @@ pub struct RunReportInput {
 
 fn d20() -> u32 { 20 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct RunPayrollInput {
+    /// Fiscal period id to run payroll for (from list_fiscal_periods).
+    pub period_id: String,
+    /// Pay date (YYYY-MM-DD); usually the period end.
+    pub pay_date: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct PayRunInputToolInput {
+    /// The DRAFT pay run id to adjust.
+    pub run_id: String,
+    pub employee_id: String,
+    /// "earning" (adds to pay) or "deduction" (reduces net pay).
+    pub kind: String,
+    /// Payslip description (e.g. "Performance Bonus", "SACCO").
+    pub name: String,
+    pub amount: f64,
+    /// Earnings only: subject to PAYE/NSSF/SHA/Housing. Default true.
+    #[serde(default = "d_true")]
+    pub taxable: bool,
+    /// Optional type code from masters ("BONUS", "OVERTIME", "SACCO"…).
+    #[serde(default)]
+    pub type_code: Option<String>,
+}
+
+fn d_true() -> bool { true }
+
 // ─── Server ──────────────────────────────────────────────────────────────────
 
 #[derive(Clone)]
 pub struct ErpServer {
     pub backend: Arc<dyn ErpBackend>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct JsonBodyInput {
+    /// The request body as a JSON object matching the ERP API for this action.
+    pub body: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct IdBodyInput {
+    pub id: String,
+    /// The request body as a JSON object for this action.
+    pub body: serde_json::Value,
 }
 
 #[tool_router(server_handler)]
@@ -520,7 +561,7 @@ impl ErpServer {
         }
     }
 
-    #[tool(description = "Run a financial report. Types: TrialBalance, BalanceSheet, ProfitAndLoss, CashFlow, ArAgeing, ApAgeing, VatReturn, GlDetail, IncomeByCustomer, ExpenseByVendor, EquityChanges. Use as_at for point-in-time reports, from/to for period reports")]
+    #[tool(description = "Run a financial or payroll report. Financial: TrialBalance, BalanceSheet, ProfitAndLoss, CashFlow, ArAgeing, ApAgeing, VatReturn, GlDetail, IncomeByCustomer, ExpenseByVendor, EquityChanges. Payroll: PayrollRegister, StatutorySchedule (KRA/NSSF/SHA/Housing/HELB remittance), PayeP9, PayeP10, PayrollBankFile (net-pay EFT), PayrollSummary. Use as_at for point-in-time reports, from/to for period reports")]
     async fn run_report(&self, Parameters(i): Parameters<RunReportInput>) -> String {
         match self.backend.run_report(&i.report_type, i.as_at.as_deref(), i.from.as_deref(), i.to.as_deref()).await {
             Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
@@ -550,6 +591,176 @@ impl ErpServer {
             Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
             Err(e) => format!("Error: {e}"),
         }
+    }
+
+    // ─── HR & Payroll ────────────────────────────────────────────────────────
+
+    #[tool(description = "List employees (staff records for payroll: name, staff number, salary, KRA PIN, department, bank)")]
+    async fn list_employees(&self, Parameters(i): Parameters<ListInput>) -> String {
+        match self.backend.list_employees(i.limit).await {
+            Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "List fiscal periods — use this to get the period_id needed to run payroll")]
+    async fn list_fiscal_periods(&self) -> String {
+        match self.backend.list_fiscal_periods().await {
+            Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "List departments / cost centres")]
+    async fn list_departments(&self) -> String {
+        match self.backend.list_departments().await {
+            Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "List pay runs (payroll history) with status, headcount and totals (gross, net, employer cost)")]
+    async fn list_pay_runs(&self) -> String {
+        match self.backend.list_pay_runs().await {
+            Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "Get a pay run by id: header totals + per-employee payslip breakdown")]
+    async fn get_pay_run(&self, Parameters(i): Parameters<IdInput>) -> String {
+        match self.backend.get_pay_run(&i.id).await {
+            Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "Run payroll for a fiscal period: creates a DRAFT pay run for all active employees with Kenya statutory (PAYE, NSSF, SHA, Housing Levy, HELB) computed. Review before approving/posting. Returns the draft run id + totals")]
+    async fn run_payroll(&self, Parameters(i): Parameters<RunPayrollInput>) -> String {
+        match self.backend.run_payroll(&i.period_id, &i.pay_date).await {
+            Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "Add a per-run adjustment to a DRAFT pay run — an earning (bonus, overtime) or a deduction (SACCO, advance) for one employee. The run auto-recomputes so the totals update")]
+    async fn add_pay_run_input(&self, Parameters(i): Parameters<PayRunInputToolInput>) -> String {
+        let input = PayRunInputInput {
+            employee_id: i.employee_id,
+            kind: i.kind,
+            name: i.name,
+            amount: i.amount,
+            taxable: i.taxable,
+            type_code: i.type_code,
+        };
+        match self.backend.add_pay_run_input(&i.run_id, &input).await {
+            Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "Recompute a DRAFT pay run — re-applies adjustments and any master/statutory changes")]
+    async fn recompute_pay_run(&self, Parameters(i): Parameters<IdInput>) -> String {
+        match self.backend.recompute_pay_run(&i.id).await {
+            Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "Approve a DRAFT pay run (draft → approved). Confirm the totals with the user first")]
+    async fn approve_pay_run(&self, Parameters(i): Parameters<IdInput>) -> String {
+        match self.backend.approve_pay_run(&i.id).await {
+            Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "Post an APPROVED pay run to the general ledger (approved → posted). Posts a balanced payroll journal; requires an open fiscal period. Confirm with the user first")]
+    async fn post_pay_run(&self, Parameters(i): Parameters<IdInput>) -> String {
+        match self.backend.post_pay_run(&i.id).await {
+            Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "Mark a POSTED pay run as paid (posted → paid), once salaries have been disbursed")]
+    async fn mark_pay_run_paid(&self, Parameters(i): Parameters<IdInput>) -> String {
+        match self.backend.mark_pay_run_paid(&i.id).await {
+            Ok(v) => serde_json::to_string_pretty(&v).unwrap(),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    // ─── Procurement (P2P) ───────────────────────────────────────────────────
+
+    #[tool(description = "List purchase requisitions with their status (draft/submitted/approved/converted/rejected)")]
+    async fn procurement_list_requisitions(&self) -> String {
+        match self.backend.list_requisitions().await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "Create a purchase requisition. body: {title, department?, needed_by?, justification?, lines:[{description, quantity, uom, estimated_unit_price, account_code?}]}")]
+    async fn procurement_create_requisition(&self, Parameters(i): Parameters<JsonBodyInput>) -> String {
+        match self.backend.create_requisition(&i.body).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "Approve a submitted requisition (enforces the approver's spend limit). Confirm with the user first")]
+    async fn procurement_approve_requisition(&self, Parameters(i): Parameters<IdInput>) -> String {
+        match self.backend.approve_requisition(&i.id).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "Convert an approved requisition into a tender or direct PO. body: {target:'tender'|'purchase_order', vendor_id? (required for PO), delivery_date?, closing_date?}")]
+    async fn procurement_convert_requisition(&self, Parameters(i): Parameters<IdBodyInput>) -> String {
+        match self.backend.convert_requisition(&i.id, &i.body).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "Raise a direct LPO against a vendor (no tender). body: {vendor_id, currency?, delivery_date?, notes?, lines:[{description, quantity, uom, unit_price, account_code?}]}")]
+    async fn procurement_create_purchase_order(&self, Parameters(i): Parameters<JsonBodyInput>) -> String {
+        match self.backend.create_direct_po(&i.body).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "Email the LPO PDF to the vendor. id = PO id. body: {recipient_email?, message?}")]
+    async fn procurement_send_purchase_order(&self, Parameters(i): Parameters<IdBodyInput>) -> String {
+        match self.backend.send_purchase_order(&i.id, &i.body).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "Record a Goods Receipt Note against a PO. id = PO id. body: {receipt_date?, notes?, lines:[{po_line_id?, description, quantity_received}]}")]
+    async fn procurement_receive_goods(&self, Parameters(i): Parameters<IdBodyInput>) -> String {
+        match self.backend.receive_goods(&i.id, &i.body).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "Get the 3-way match (ordered vs received vs billed) for a PO. id = PO id")]
+    async fn procurement_three_way_match(&self, Parameters(i): Parameters<IdInput>) -> String {
+        match self.backend.three_way_match(&i.id).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "Issue a supplier debit note (return/overcharge) reducing the payable. body: {vendor_id, reason?, applies_to_bill?, po_id?, lines:[{description, quantity, unit_price, account_code?}]}")]
+    async fn procurement_create_debit_note(&self, Parameters(i): Parameters<JsonBodyInput>) -> String {
+        match self.backend.create_debit_note(&i.body).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "List staff expense claims with their status")]
+    async fn procurement_list_expense_claims(&self) -> String {
+        match self.backend.list_expense_claims().await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "Create a staff expense claim. body: {title, lines:[{expense_date?, description, account_code?, amount}]}")]
+    async fn procurement_create_expense_claim(&self, Parameters(i): Parameters<JsonBodyInput>) -> String {
+        match self.backend.create_expense_claim(&i.body).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "Approve a submitted expense claim — posts DR expense / CR payable (enforces spend limit). Confirm with the user first")]
+    async fn procurement_approve_expense_claim(&self, Parameters(i): Parameters<IdInput>) -> String {
+        match self.backend.approve_expense_claim(&i.id).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "Procurement analytics: spend by vendor, open-commitment register, and document counts by status")]
+    async fn procurement_analytics(&self) -> String {
+        match self.backend.procurement_analytics().await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "Budget vs committed (open POs) vs actual by account — the encumbrance view for procurement budget control")]
+    async fn procurement_budget_control(&self) -> String {
+        match self.backend.budget_control().await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
     }
 }
 

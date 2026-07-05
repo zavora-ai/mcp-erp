@@ -261,6 +261,61 @@ pub trait ErpBackend: Send + Sync {
     async fn post_journal_entry(&self, _input: &PostJournalInput) -> anyhow::Result<serde_json::Value> {
         Err(anyhow::anyhow!("{}: journal posting not supported by this backend", self.name()))
     }
+
+    // ─── HR & Payroll extensions ─────────────────────────────────────────────
+    // Employees, fiscal periods, and the pay-run lifecycle (run → adjust →
+    // recompute → approve → post → paid). Raw backend JSON; only Zavora ERA
+    // implements these today.
+
+    async fn list_employees(&self, _limit: u32) -> anyhow::Result<serde_json::Value> {
+        Err(anyhow::anyhow!("{}: employees not supported by this backend", self.name()))
+    }
+    async fn list_fiscal_periods(&self) -> anyhow::Result<serde_json::Value> {
+        Err(anyhow::anyhow!("{}: fiscal periods not supported by this backend", self.name()))
+    }
+    async fn list_departments(&self) -> anyhow::Result<serde_json::Value> {
+        Err(anyhow::anyhow!("{}: departments not supported by this backend", self.name()))
+    }
+    async fn list_pay_runs(&self) -> anyhow::Result<serde_json::Value> {
+        Err(anyhow::anyhow!("{}: payroll not supported by this backend", self.name()))
+    }
+    async fn get_pay_run(&self, _id: &str) -> anyhow::Result<serde_json::Value> {
+        Err(anyhow::anyhow!("{}: payroll not supported by this backend", self.name()))
+    }
+    async fn run_payroll(&self, _period_id: &str, _pay_date: &str) -> anyhow::Result<serde_json::Value> {
+        Err(anyhow::anyhow!("{}: payroll not supported by this backend", self.name()))
+    }
+    async fn add_pay_run_input(&self, _run_id: &str, _input: &PayRunInputInput) -> anyhow::Result<serde_json::Value> {
+        Err(anyhow::anyhow!("{}: payroll not supported by this backend", self.name()))
+    }
+    async fn recompute_pay_run(&self, _id: &str) -> anyhow::Result<serde_json::Value> {
+        Err(anyhow::anyhow!("{}: payroll not supported by this backend", self.name()))
+    }
+    async fn approve_pay_run(&self, _id: &str) -> anyhow::Result<serde_json::Value> {
+        Err(anyhow::anyhow!("{}: payroll not supported by this backend", self.name()))
+    }
+    async fn post_pay_run(&self, _id: &str) -> anyhow::Result<serde_json::Value> {
+        Err(anyhow::anyhow!("{}: payroll not supported by this backend", self.name()))
+    }
+    async fn mark_pay_run_paid(&self, _id: &str) -> anyhow::Result<serde_json::Value> {
+        Err(anyhow::anyhow!("{}: payroll not supported by this backend", self.name()))
+    }
+
+    // ─── Procurement (P2P) extensions ────────────────────────────────────────
+    async fn list_requisitions(&self) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: procurement not supported by this backend", self.name())) }
+    async fn create_requisition(&self, _body: &serde_json::Value) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: procurement not supported by this backend", self.name())) }
+    async fn approve_requisition(&self, _id: &str) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: procurement not supported by this backend", self.name())) }
+    async fn convert_requisition(&self, _id: &str, _body: &serde_json::Value) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: procurement not supported by this backend", self.name())) }
+    async fn create_direct_po(&self, _body: &serde_json::Value) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: procurement not supported by this backend", self.name())) }
+    async fn send_purchase_order(&self, _id: &str, _body: &serde_json::Value) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: procurement not supported by this backend", self.name())) }
+    async fn receive_goods(&self, _po_id: &str, _body: &serde_json::Value) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: procurement not supported by this backend", self.name())) }
+    async fn three_way_match(&self, _po_id: &str) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: procurement not supported by this backend", self.name())) }
+    async fn create_debit_note(&self, _body: &serde_json::Value) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: procurement not supported by this backend", self.name())) }
+    async fn list_expense_claims(&self) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: procurement not supported by this backend", self.name())) }
+    async fn create_expense_claim(&self, _body: &serde_json::Value) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: procurement not supported by this backend", self.name())) }
+    async fn approve_expense_claim(&self, _id: &str) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: procurement not supported by this backend", self.name())) }
+    async fn procurement_analytics(&self) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: procurement not supported by this backend", self.name())) }
+    async fn budget_control(&self) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: procurement not supported by this backend", self.name())) }
 }
 
 /// Input for creating a vendor bill draft.
@@ -361,3 +416,22 @@ pub struct LineItemInput {
     pub quantity: f64,
     pub unit_price: f64,
 }
+
+/// A per-run payroll adjustment (bonus/overtime earning, or a voluntary/loan deduction).
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PayRunInputInput {
+    pub employee_id: String,
+    /// "earning" (adds to pay) or "deduction" (reduces net pay).
+    pub kind: String,
+    /// Description shown on the payslip (e.g. "Performance Bonus", "SACCO").
+    pub name: String,
+    pub amount: f64,
+    /// Earnings only: whether the amount is subject to PAYE/NSSF/SHA/Housing. Default true.
+    #[serde(default = "default_true_pri")]
+    pub taxable: bool,
+    /// Optional earning/deduction type code from the masters (e.g. "BONUS", "SACCO").
+    #[serde(default)]
+    pub type_code: Option<String>,
+}
+
+fn default_true_pri() -> bool { true }

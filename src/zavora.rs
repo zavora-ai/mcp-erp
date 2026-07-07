@@ -639,4 +639,6 @@ impl ErpBackend for ZavoraBackend {
     async fn approve_expense_claim(&self, id: &str) -> Result<Value> { self.post_action(&format!("expense-claims/{id}/approve")).await }
     async fn procurement_analytics(&self) -> Result<Value> { self.get("procurement/analytics").await }
     async fn budget_control(&self) -> Result<Value> { self.get("procurement/budget-control").await }
+    async fn etims_status(&self) -> Result<Value> { self.get("etims/config").await }
+    async fn etims_transmit_invoice(&self, id: &str) -> Result<Value> { self.post_action(&format!("etims/invoices/{id}/transmit")).await }
 }

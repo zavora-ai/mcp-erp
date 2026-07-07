@@ -762,6 +762,16 @@ impl ErpServer {
     async fn procurement_budget_control(&self) -> String {
         match self.backend.budget_control().await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
     }
+
+    #[tool(description = "KRA eTIMS status: whether the device is enabled/initialised, its SCU id, and the last invoice number transmitted")]
+    async fn etims_status(&self) -> String {
+        match self.backend.etims_status().await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "Transmit (or retry) a posted invoice OR credit note to KRA eTIMS in real time, returning the signed SCU receipt. Pass the invoice/credit-note id. Credit notes go out as a credit/refund receipt referencing the original invoice. Documents auto-transmit on posting; use this to retry a failed one. Confirm with the user first")]
+    async fn etims_transmit_invoice(&self, Parameters(i): Parameters<IdInput>) -> String {
+        match self.backend.etims_transmit_invoice(&i.id).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
 }
 
 #[async_trait::async_trait]

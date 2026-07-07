@@ -316,6 +316,9 @@ pub trait ErpBackend: Send + Sync {
     async fn approve_expense_claim(&self, _id: &str) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: procurement not supported by this backend", self.name())) }
     async fn procurement_analytics(&self) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: procurement not supported by this backend", self.name())) }
     async fn budget_control(&self) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: procurement not supported by this backend", self.name())) }
+    // KRA eTIMS (Kenya) — Zavora-specific.
+    async fn etims_status(&self) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: eTIMS not supported by this backend", self.name())) }
+    async fn etims_transmit_invoice(&self, _id: &str) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: eTIMS not supported by this backend", self.name())) }
 }
 
 /// Input for creating a vendor bill draft.

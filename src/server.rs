@@ -772,6 +772,48 @@ impl ErpServer {
     async fn etims_transmit_invoice(&self, Parameters(i): Parameters<IdInput>) -> String {
         match self.backend.etims_transmit_invoice(&i.id).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
     }
+
+    // ─── Banking, period-end & statutory workflows ──────────────────────────
+
+    #[tool(description = "List completed bank reconciliations (bank account, statement date, statement balance, when locked)")]
+    async fn list_reconciliations(&self) -> String {
+        match self.backend.list_reconciliations().await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "Start a bank reconciliation: returns the GL balance, already-cleared balance, and the uncleared ledger entries to tick off against the statement. Body: {\"bank_account_id\": \"<uuid>\", \"statement_date\": \"YYYY-MM-DD\"}")]
+    async fn compute_reconciliation(&self, Parameters(i): Parameters<JsonBodyInput>) -> String {
+        match self.backend.compute_reconciliation(&i.body).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "Complete and LOCK a bank reconciliation — only succeeds when the cleared balance equals the statement closing balance. Body: {\"bank_account_id\": \"<uuid>\", \"statement_date\": \"YYYY-MM-DD\", \"statement_closing_balance\": <number>, \"cleared_entry_ids\": [\"<uuid>\", ...]}. Confirm with the user first")]
+    async fn complete_reconciliation(&self, Parameters(i): Parameters<JsonBodyInput>) -> String {
+        match self.backend.complete_reconciliation(&i.body).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "Close (lock) a fiscal period so no further postings can land in it. Pass the period id from list_fiscal_periods. Confirm with the user first")]
+    async fn close_period(&self, Parameters(i): Parameters<IdInput>) -> String {
+        match self.backend.close_period(&i.id).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "Reopen a previously closed fiscal period to allow corrections. Pass the period id. Confirm with the user first")]
+    async fn reopen_period(&self, Parameters(i): Parameters<IdInput>) -> String {
+        match self.backend.reopen_period(&i.id).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "List tax filings (VAT/PAYE/WHT returns): period, amount, filed/remitted status")]
+    async fn list_tax_filings(&self) -> String {
+        match self.backend.list_tax_filings().await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "Record a tax return as FILED for a period (run the matching report first — VatReturn, PayeP or WhtCertificate — and confirm the figure with the user). Body: {\"tax_type\": \"VAT\"|\"PAYE\"|\"WHT\", \"period_from\": \"YYYY-MM-DD\", \"period_to\": \"YYYY-MM-DD\", \"amount\": <number>}")]
+    async fn file_tax_return(&self, Parameters(i): Parameters<JsonBodyInput>) -> String {
+        match self.backend.file_tax_return(&i.body).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "Record the remittance (payment to KRA) of a filed tax return — posts the payment against the filing. Pass the filing id and the payment body the ERP expects. Confirm with the user first")]
+    async fn remit_tax_filing(&self, Parameters(i): Parameters<IdBodyInput>) -> String {
+        match self.backend.remit_tax_filing(&i.id, &i.body).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
 }
 
 #[async_trait::async_trait]

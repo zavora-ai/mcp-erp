@@ -641,4 +641,12 @@ impl ErpBackend for ZavoraBackend {
     async fn budget_control(&self) -> Result<Value> { self.get("procurement/budget-control").await }
     async fn etims_status(&self) -> Result<Value> { self.get("etims/config").await }
     async fn etims_transmit_invoice(&self, id: &str) -> Result<Value> { self.post_action(&format!("etims/invoices/{id}/transmit")).await }
+    async fn list_reconciliations(&self) -> Result<Value> { self.get("bank/reconciliations").await }
+    async fn compute_reconciliation(&self, body: &Value) -> Result<Value> { self.post("bank/reconciliations/compute", body).await }
+    async fn complete_reconciliation(&self, body: &Value) -> Result<Value> { self.post("bank/reconciliations/complete", body).await }
+    async fn close_period(&self, id: &str) -> Result<Value> { self.post_action(&format!("periods/{id}/close")).await }
+    async fn reopen_period(&self, id: &str) -> Result<Value> { self.post_action(&format!("periods/{id}/reopen")).await }
+    async fn list_tax_filings(&self) -> Result<Value> { self.get("tax-filings").await }
+    async fn file_tax_return(&self, body: &Value) -> Result<Value> { self.post("tax-filings", body).await }
+    async fn remit_tax_filing(&self, id: &str, body: &Value) -> Result<Value> { self.post(&format!("tax-filings/{id}/remit"), body).await }
 }

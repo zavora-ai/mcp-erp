@@ -319,6 +319,15 @@ pub trait ErpBackend: Send + Sync {
     // KRA eTIMS (Kenya) — Zavora-specific.
     async fn etims_status(&self) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: eTIMS not supported by this backend", self.name())) }
     async fn etims_transmit_invoice(&self, _id: &str) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: eTIMS not supported by this backend", self.name())) }
+    // Banking, period-end and statutory workflows — Zavora-specific.
+    async fn list_reconciliations(&self) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: bank reconciliation not supported by this backend", self.name())) }
+    async fn compute_reconciliation(&self, _body: &serde_json::Value) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: bank reconciliation not supported by this backend", self.name())) }
+    async fn complete_reconciliation(&self, _body: &serde_json::Value) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: bank reconciliation not supported by this backend", self.name())) }
+    async fn close_period(&self, _id: &str) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: period close not supported by this backend", self.name())) }
+    async fn reopen_period(&self, _id: &str) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: period close not supported by this backend", self.name())) }
+    async fn list_tax_filings(&self) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: tax filings not supported by this backend", self.name())) }
+    async fn file_tax_return(&self, _body: &serde_json::Value) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: tax filings not supported by this backend", self.name())) }
+    async fn remit_tax_filing(&self, _id: &str, _body: &serde_json::Value) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: tax filings not supported by this backend", self.name())) }
 }
 
 /// Input for creating a vendor bill draft.

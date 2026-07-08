@@ -649,4 +649,22 @@ impl ErpBackend for ZavoraBackend {
     async fn list_tax_filings(&self) -> Result<Value> { self.get("tax-filings").await }
     async fn file_tax_return(&self, body: &Value) -> Result<Value> { self.post("tax-filings", body).await }
     async fn remit_tax_filing(&self, id: &str, body: &Value) -> Result<Value> { self.post(&format!("tax-filings/{id}/remit"), body).await }
+    async fn cit_estimate(&self, fiscal_year: Option<i32>, adjustments: Option<f64>) -> Result<Value> {
+        let mut q = Vec::new();
+        if let Some(y) = fiscal_year { q.push(format!("fiscal_year={y}")); }
+        if let Some(a) = adjustments { q.push(format!("adjustments={a}")); }
+        let qs = if q.is_empty() { String::new() } else { format!("?{}", q.join("&")) };
+        self.get(&format!("tax/cit/estimate{qs}")).await
+    }
+    async fn send_customer_statement(&self, id: &str, body: &Value) -> Result<Value> { self.post(&format!("customers/{id}/send-statement"), body).await }
+    async fn list_fixed_assets(&self) -> Result<Value> { self.get("assets").await }
+    async fn run_depreciation(&self, date: Option<&str>) -> Result<Value> {
+        let qs = date.map(|d| format!("?date={d}")).unwrap_or_default();
+        self.post_action(&format!("assets/depreciation/run{qs}")).await
+    }
+    async fn run_fx_revaluation(&self, date: Option<&str>) -> Result<Value> {
+        let qs = date.map(|d| format!("?date={d}")).unwrap_or_default();
+        self.post_action(&format!("fx/revaluation{qs}")).await
+    }
+    async fn import_bank_statement(&self, body: &Value) -> Result<Value> { self.post("bank/import", body).await }
 }

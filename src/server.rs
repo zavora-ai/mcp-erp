@@ -218,6 +218,20 @@ pub struct JsonBodyInput {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CitEstimateInput {
+    /// Calendar year the fiscal year ends in (default: the current fiscal year).
+    pub fiscal_year: Option<i32>,
+    /// Manual ± adjustment to taxable profit (disallowables, investment deductions, loss carry-forwards).
+    pub adjustments: Option<f64>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct DateInput {
+    /// ISO date (YYYY-MM-DD); default today.
+    pub date: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IdBodyInput {
     pub id: String,
     /// The request body as a JSON object for this action.
@@ -813,6 +827,38 @@ impl ErpServer {
     #[tool(description = "Record the remittance (payment to KRA) of a filed tax return — posts the payment against the filing. Pass the filing id and the payment body the ERP expects. Confirm with the user first")]
     async fn remit_tax_filing(&self, Parameters(i): Parameters<IdBodyInput>) -> String {
         match self.backend.remit_tax_filing(&i.id, &i.body).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    // ─── Corporation tax, AR outreach, assets/FX, statement import ──────────
+
+    #[tool(description = "Corporation-tax ESTIMATE + the Kenyan installment-tax calendar for a fiscal year: accounting profit from the ledger, book-depreciation add-back, capital allowances from the asset register (Second-Schedule default rates), 30% CIT, installments due the 20th of the 4th/6th/9th/12th months, what's been paid, and the balance-of-tax deadline. Decision support — iTax is the filing of record. Optional: fiscal_year (calendar year the FY ends in), adjustments (± taxable-profit correction for disallowables/investment deductions/losses)")]
+    async fn cit_estimate(&self, Parameters(i): Parameters<CitEstimateInput>) -> String {
+        match self.backend.cit_estimate(i.fiscal_year, i.adjustments).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "Send a statement of account to a customer over email/whatsapp/sms — the AR chase action. Pass the customer id and body {\"channel\": \"email\"}. Confirm with the user before sending")]
+    async fn send_customer_statement(&self, Parameters(i): Parameters<IdBodyInput>) -> String {
+        match self.backend.send_customer_statement(&i.id, &i.body).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "List the fixed-asset register: category, cost, acquisition date, accumulated depreciation, net book value")]
+    async fn list_fixed_assets(&self) -> String {
+        match self.backend.list_fixed_assets().await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "Run the monthly depreciation posting for all active fixed assets as of a date (default today). Idempotent per period. Posts to the ledger — confirm with the user first")]
+    async fn run_depreciation(&self, Parameters(i): Parameters<DateInput>) -> String {
+        match self.backend.run_depreciation(i.date.as_deref()).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "Run the FX revaluation of foreign-currency balances at the rate for a date (default today). Posts unrealised gain/loss to the ledger — confirm with the user first")]
+    async fn run_fx_revaluation(&self, Parameters(i): Parameters<DateInput>) -> String {
+        match self.backend.run_fx_revaluation(i.date.as_deref()).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "Import a bank/M-Pesa statement (CSV, MT940 or OFX content) into the bank feed for categorisation and reconciliation. Idempotent: duplicate files/lines are skipped. Body: {\"bank_account_id\": \"<uuid>\", \"filename\": \"...\", \"content\": \"<file text>\"}")]
+    async fn import_bank_statement(&self, Parameters(i): Parameters<JsonBodyInput>) -> String {
+        match self.backend.import_bank_statement(&i.body).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
     }
 }
 

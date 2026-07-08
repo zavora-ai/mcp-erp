@@ -2,6 +2,8 @@
 mod types;
 mod server;
 
+#[cfg(feature = "zavora")]
+mod zavora;
 #[cfg(feature = "zoho")]
 mod zoho;
 #[cfg(feature = "odoo")]
@@ -24,8 +26,18 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env().add_directive("info".parse()?))
         .init();
 
-    // Validate manifest
-    let manifest = adk_mcp_sdk::ServerManifest::from_file(std::path::Path::new("mcp-server.toml"))?;
+    // Validate manifest — check the cwd first, then fall back to the crate root
+    // relative to the executable (target/{profile}/mcp-erp → ../../mcp-server.toml)
+    // so the server can be spawned from any working directory.
+    let manifest_path = ["mcp-server.toml"]
+        .iter()
+        .map(std::path::PathBuf::from)
+        .chain(std::env::current_exe().ok().and_then(|exe| {
+            exe.parent().and_then(|p| p.parent()).and_then(|p| p.parent()).map(|root| root.join("mcp-server.toml"))
+        }))
+        .find(|p| p.exists())
+        .ok_or_else(|| anyhow::anyhow!("mcp-server.toml not found in cwd or next to the executable"))?;
+    let manifest = adk_mcp_sdk::ServerManifest::from_file(&manifest_path)?;
     let errors = manifest.validate();
     if !errors.is_empty() {
         for e in &errors { tracing::error!("manifest: {e}"); }
@@ -43,6 +55,13 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn init_backend() -> anyhow::Result<Arc<dyn types::ErpBackend>> {
+    // Zavora ERA
+    #[cfg(feature = "zavora")]
+    if let (Ok(url), Ok(email), Ok(pass)) = (std::env::var("ZAVORA_API_URL"), std::env::var("ZAVORA_EMAIL"), std::env::var("ZAVORA_PASSWORD")) {
+        tracing::info!("Using Zavora ERA backend at {url}");
+        return Ok(Arc::new(zavora::ZavoraBackend::new(url, email, pass)));
+    }
+
     // Zoho
     #[cfg(feature = "zoho")]
     if let (Ok(token), Ok(org)) = (std::env::var("ZOHO_TOKEN"), std::env::var("ZOHO_ORG_ID")) {
@@ -78,5 +97,5 @@ async fn init_backend() -> anyhow::Result<Arc<dyn types::ErpBackend>> {
         return Ok(Arc::new(sap::SapBackend::new(url, token)));
     }
 
-    anyhow::bail!("No ERP backend configured. Set env vars for one of: ZOHO_TOKEN+ZOHO_ORG_ID, ODOO_URL+ODOO_DB+ODOO_USER+ODOO_PASSWORD, BC_TENANT_ID+BC_ENVIRONMENT+BC_COMPANY_ID+BC_TOKEN, NETSUITE_ACCOUNT_ID+..., SAP_BASE_URL+SAP_TOKEN")
+    anyhow::bail!("No ERP backend configured. Set env vars for one of: ZAVORA_API_URL+ZAVORA_EMAIL+ZAVORA_PASSWORD, ZOHO_TOKEN+ZOHO_ORG_ID, ODOO_URL+ODOO_DB+ODOO_USER+ODOO_PASSWORD, BC_TENANT_ID+BC_ENVIRONMENT+BC_COMPANY_ID+BC_TOKEN, NETSUITE_ACCOUNT_ID+..., SAP_BASE_URL+SAP_TOKEN")
 }

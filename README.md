@@ -5,7 +5,7 @@
 [![ADK-Rust Enterprise](https://img.shields.io/badge/ADK--Rust-Enterprise-purple.svg)](https://enterprise.adk-rust.com)
 [![Registry Ready](https://img.shields.io/badge/ADK_Registry-Ready-green.svg)](https://www.zavora.ai)
 
-The most complete multi-backend ERP MCP server. **34 tools** across **5 backends** — SAP S/4HANA, NetSuite, Odoo, Zoho Books, and Microsoft Dynamics 365 Business Central. Lifecycle-based document management with governed write operations. Single Rust binary with feature-flagged backends and enterprise governance.
+The most complete multi-backend ERP MCP server. **44 tools** across **6 backends** — SAP S/4HANA, NetSuite, Odoo, Zoho Books, Microsoft Dynamics 365 Business Central, and Zavora ERA. Lifecycle-based document management with governed write operations. Single Rust binary with feature-flagged backends and enterprise governance.
 
 ## Architecture
 
@@ -37,7 +37,7 @@ The most complete multi-backend ERP MCP server. **34 tools** across **5 backends
 | Registry governance | ❌ | ❌ | ✅ |
 | Agent-native (MCP) | ❌ | ❌ | ✅ |
 
-## Tools (34)
+## Tools (44)
 
 ### Customers (4)
 
@@ -189,6 +189,18 @@ cargo install mcp-erp --no-default-features --features "zoho,business-central"
 ```
 
 ## Configuration
+
+### Zavora ERA
+
+```bash
+export ZAVORA_API_URL="http://localhost:8080"
+export ZAVORA_EMAIL="agent@company.co.ke"     # service user
+export ZAVORA_PASSWORD="secret"               # JWT login; token auto-refreshes
+```
+
+Build with `--features zavora`. The Zavora backend also implements the
+accounting extension tools below (bills, payments with Kenyan WHT, financial
+reports, dashboard, bank accounts, manual journals).
 
 ### Zoho Books
 
@@ -382,12 +394,29 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 | [mcp-server.toml](mcp-server.toml) | ADK-Rust Enterprise registry manifest |
 | [LICENSE](LICENSE) | Apache-2.0 license |
 
+### Accounting extensions (10)
+
+Full-ledger operations implemented by backends that expose them (currently
+Zavora ERA; others return a clear "not supported" error).
+
+| Tool | Purpose | Risk Class |
+|------|---------|------------|
+| `list_bills` / `get_bill` | Vendor bills (accounts payable) | Read-only |
+| `create_bill_draft` | Record a supplier invoice as a draft bill | Internal write |
+| `post_bill` | Post a bill's AP journal to the ledger | External write |
+| `list_payments` | Customer receipts & vendor payments | Read-only |
+| `record_payment` | Record a payment with document applications, withholding tax, non-cash funding | External write |
+| `run_report` | Financial reports (trial balance, P&L, balance sheet, ageing, …) | Read-only |
+| `get_dashboard` | Cash / receivables / payables snapshot | Read-only |
+| `list_bank_accounts` | Bank & mobile-money accounts with balances | Read-only |
+| `post_journal_entry` | Balanced manual journal entry | External write |
+
 ## Registry Compliance
 
 This server implements the [ADK MCP SDK](https://crates.io/crates/adk-mcp-sdk) contract:
 
 - **HealthCheck** — verifies backend connectivity on startup
-- **mcp-server.toml** — manifest with 34 tools, risk classes, and credential bindings
+- **mcp-server.toml** — manifest with risk classes, risk classes, and credential bindings
 - **Manifest validation** — startup fails fast on invalid manifest (SDK 0.1.3+)
 - **Structured tracing** — `RUST_LOG` env-filter for observability
 

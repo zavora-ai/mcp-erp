@@ -13,12 +13,13 @@ readme = "README.md"
 
 [features]
 default = ["zoho", "odoo"]
+zavora = []
 zoho = []
 odoo = []
 business-central = []
 netsuite = []
 sap = []
-all-backends = ["zoho", "odoo", "business-central", "netsuite", "sap"]
+all-backends = ["zavora", "zoho", "odoo", "business-central", "netsuite", "sap"]
 
 [dependencies]
 adk-mcp-sdk = "0.1"

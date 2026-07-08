@@ -860,6 +860,16 @@ impl ErpServer {
     async fn import_bank_statement(&self, Parameters(i): Parameters<JsonBodyInput>) -> String {
         match self.backend.import_bank_statement(&i.body).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
     }
+
+    #[tool(description = "List budget entries: account, amount, fiscal period. Pair with run_report BudgetVsActual for variance")]
+    async fn list_budgets(&self) -> String {
+        match self.backend.list_budgets().await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
+
+    #[tool(description = "Set (upsert) the budget for one account in one fiscal period. Body: {\"period_id\": \"<uuid from list_fiscal_periods>\", \"account_code\": \"...\", \"amount\": <number>}. Confirm the figures with the user before writing")]
+    async fn set_budget(&self, Parameters(i): Parameters<JsonBodyInput>) -> String {
+        match self.backend.set_budget(&i.body).await { Ok(v) => serde_json::to_string_pretty(&v).unwrap(), Err(e) => format!("Error: {e}") }
+    }
 }
 
 #[async_trait::async_trait]

@@ -667,4 +667,6 @@ impl ErpBackend for ZavoraBackend {
         self.post_action(&format!("fx/revaluation{qs}")).await
     }
     async fn import_bank_statement(&self, body: &Value) -> Result<Value> { self.post("bank/import", body).await }
+    async fn list_budgets(&self) -> Result<Value> { self.get("budgets").await }
+    async fn set_budget(&self, body: &Value) -> Result<Value> { self.put("budgets", body).await }
 }

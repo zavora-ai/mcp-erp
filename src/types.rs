@@ -335,6 +335,9 @@ pub trait ErpBackend: Send + Sync {
     async fn run_depreciation(&self, _date: Option<&str>) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: fixed assets not supported by this backend", self.name())) }
     async fn run_fx_revaluation(&self, _date: Option<&str>) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: FX revaluation not supported by this backend", self.name())) }
     async fn import_bank_statement(&self, _body: &serde_json::Value) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: statement import not supported by this backend", self.name())) }
+    // Budgets — Zavora-specific.
+    async fn list_budgets(&self) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: budgets not supported by this backend", self.name())) }
+    async fn set_budget(&self, _body: &serde_json::Value) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: budgets not supported by this backend", self.name())) }
 }
 
 /// Input for creating a vendor bill draft.

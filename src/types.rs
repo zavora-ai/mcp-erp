@@ -328,6 +328,13 @@ pub trait ErpBackend: Send + Sync {
     async fn list_tax_filings(&self) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: tax filings not supported by this backend", self.name())) }
     async fn file_tax_return(&self, _body: &serde_json::Value) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: tax filings not supported by this backend", self.name())) }
     async fn remit_tax_filing(&self, _id: &str, _body: &serde_json::Value) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: tax filings not supported by this backend", self.name())) }
+    async fn cit_estimate(&self, _fiscal_year: Option<i32>, _adjustments: Option<f64>) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: corporation tax not supported by this backend", self.name())) }
+    // AR outreach, asset/FX runs, statement import — Zavora-specific.
+    async fn send_customer_statement(&self, _id: &str, _body: &serde_json::Value) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: statement sending not supported by this backend", self.name())) }
+    async fn list_fixed_assets(&self) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: fixed assets not supported by this backend", self.name())) }
+    async fn run_depreciation(&self, _date: Option<&str>) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: fixed assets not supported by this backend", self.name())) }
+    async fn run_fx_revaluation(&self, _date: Option<&str>) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: FX revaluation not supported by this backend", self.name())) }
+    async fn import_bank_statement(&self, _body: &serde_json::Value) -> anyhow::Result<serde_json::Value> { Err(anyhow::anyhow!("{}: statement import not supported by this backend", self.name())) }
 }
 
 /// Input for creating a vendor bill draft.

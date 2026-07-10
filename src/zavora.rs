@@ -97,7 +97,17 @@ impl ZavoraBackend {
     }
 
     async fn request(&self, method: Method, path: &str, body: Option<&Value>) -> Result<Value> {
-        let (mut token, _) = self.credentials().await?;
+        // Per-call user token (injected by Amos as `__user_token`, carried in
+        // the server's task-local) makes THIS request act as the human who
+        // approved it — so the ERP records the person, not the service account,
+        // as the actor. Absent ⇒ the service login. On a 401 (e.g. a user token
+        // that expired before the client pushed a refresh) we fall back to the
+        // service login once, so the operation still completes.
+        let user_token = crate::server::current_user_token();
+        let mut token = match &user_token {
+            Some(t) => t.clone(),
+            None => self.credentials().await?.0,
+        };
         for attempt in 0..2 {
             let mut req = self
                 .http
@@ -109,7 +119,9 @@ impl ZavoraBackend {
             let resp = req.send().await?;
             let status = resp.status();
             if status == reqwest::StatusCode::UNAUTHORIZED && attempt == 0 {
-                (token, _) = self.login().await?;
+                // Re-authenticate as the service account — this also serves as
+                // the fallback when a per-call user token has expired.
+                token = self.login().await?.0;
                 continue;
             }
             let text = resp.text().await?;

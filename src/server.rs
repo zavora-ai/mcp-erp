@@ -1,9 +1,54 @@
 //! MCP tool router for ERP operations.
 use adk_mcp_sdk::{HealthCheck, HealthStatus};
 use crate::types::{CreateBillInput, ErpBackend, LineItemInput, PayRunInputInput, PostJournalInput, RecordPaymentInput};
-use rmcp::{handler::server::wrapper::Parameters, schemars, tool, tool_router};
+use rmcp::{
+    ErrorData, RoleServer, ServerHandler,
+    handler::server::{tool::ToolCallContext, wrapper::Parameters},
+    model::{
+        CallToolRequestParams, CallToolResult, ListToolsResult, PaginatedRequestParams,
+        ServerCapabilities, ServerInfo,
+    },
+    schemars,
+    service::RequestContext,
+    tool, tool_router,
+};
 use serde::Deserialize;
 use std::sync::Arc;
+
+tokio::task_local! {
+    /// The per-tool-call user bearer token, threaded from the MCP client's
+    /// `__user_token` argument so the ERP backend can act AS the human who
+    /// approved the action, not the shared service account. Unset ⇒ the
+    /// backend falls back to its service login.
+    ///
+    /// This is a task-local — NOT a field on the backend — on purpose: one
+    /// mcp-erp process serves every concurrent Amos session over one stdio
+    /// pipe, so a shared "current token" would race between sessions. A
+    /// task-local is scoped to the single `call_tool` future, so each call
+    /// carries exactly its own caller's token.
+    pub static USER_TOKEN: Option<String>;
+}
+
+/// The argument name Amos injects (server-side, after the model's turn) to
+/// carry the session user's access token. It is extracted and stripped here
+/// before the typed tool inputs ever deserialize — the model never sees it and
+/// it is never echoed back.
+pub const USER_TOKEN_ARG: &str = "__user_token";
+
+/// Pull `__user_token` out of a tool call's arguments (removing it in place so
+/// it can't leak into the typed input or any echo). Returns the token when it
+/// is a non-empty string.
+pub fn take_user_token(args: &mut serde_json::Map<String, serde_json::Value>) -> Option<String> {
+    match args.remove(USER_TOKEN_ARG) {
+        Some(serde_json::Value::String(s)) if !s.trim().is_empty() => Some(s),
+        _ => None,
+    }
+}
+
+/// Read the current task-local user token (None outside a scoped call).
+pub fn current_user_token() -> Option<String> {
+    USER_TOKEN.try_with(|t| t.clone()).ok().flatten()
+}
 
 // ─── Input types ─────────────────────────────────────────────────────────────
 
@@ -238,7 +283,7 @@ pub struct IdBodyInput {
     pub body: serde_json::Value,
 }
 
-#[tool_router(server_handler)]
+#[tool_router]
 impl ErpServer {
     // ─── Customers ───────────────────────────────────────────────────────────
 
@@ -880,5 +925,69 @@ impl HealthCheck for ErpServer {
             Ok(_) => HealthStatus { healthy: true, message: Some(format!("{} connected", self.backend.name())), latency_ms: Some(1) },
             Err(e) => HealthStatus { healthy: false, message: Some(format!("{}: {e}", self.backend.name())), latency_ms: None },
         }
+    }
+}
+
+/// Manual `ServerHandler` (instead of `#[tool_router(server_handler)]`) so the
+/// per-call user token can be pulled out of the arguments and made available to
+/// the backend for the duration of exactly that tool call. Everything else
+/// mirrors what the macro would generate.
+impl ServerHandler for ErpServer {
+    async fn call_tool(
+        &self,
+        mut request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        // Extract + strip `__user_token` BEFORE the typed tool input
+        // deserializes (serde would silently drop the unknown field otherwise),
+        // then run the tool with it bound to the task-local so `ZavoraBackend`
+        // uses it as the bearer for this call. Absent ⇒ service account.
+        let user_token = request.arguments.as_mut().and_then(take_user_token);
+        let router = Self::tool_router();
+        let tcc = ToolCallContext::new(self, request, context);
+        let fut = router.call(tcc);
+        match user_token {
+            Some(token) => USER_TOKEN.scope(Some(token), fut).await,
+            None => fut.await,
+        }
+    }
+
+    async fn list_tools(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListToolsResult, ErrorData> {
+        Ok(ListToolsResult { tools: Self::tool_router().list_all(), meta: None, next_cursor: None })
+    }
+
+    fn get_info(&self) -> ServerInfo {
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+    }
+}
+
+#[cfg(test)]
+mod token_tests {
+    use super::{USER_TOKEN_ARG, take_user_token};
+    use serde_json::json;
+
+    #[test]
+    fn extracts_and_strips_user_token() {
+        let mut args = json!({"id": "abc", USER_TOKEN_ARG: "jwt-123"})
+            .as_object()
+            .unwrap()
+            .clone();
+        assert_eq!(take_user_token(&mut args).as_deref(), Some("jwt-123"));
+        // Stripped so it can't reach the typed input or be echoed back.
+        assert!(!args.contains_key(USER_TOKEN_ARG));
+        assert!(args.contains_key("id"));
+    }
+
+    #[test]
+    fn absent_or_empty_token_is_none() {
+        let mut none = json!({"id": "abc"}).as_object().unwrap().clone();
+        assert_eq!(take_user_token(&mut none), None);
+        let mut empty = json!({USER_TOKEN_ARG: "  "}).as_object().unwrap().clone();
+        assert_eq!(take_user_token(&mut empty), None);
+        assert!(!empty.contains_key(USER_TOKEN_ARG));
     }
 }

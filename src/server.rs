@@ -1,7 +1,12 @@
 //! MCP tool router for ERP operations.
 use adk_mcp_sdk::{HealthCheck, HealthStatus};
 use crate::types::{CreateBillInput, ErpBackend, LineItemInput, PayRunInputInput, PostJournalInput, RecordPaymentInput};
-use rmcp::{handler::server::wrapper::Parameters, schemars, tool, tool_router};
+use rmcp::{
+    ErrorData, RoleServer, ServerHandler,
+    handler::server::{tool::ToolCallContext, wrapper::Parameters},
+    model::{CallToolRequestParams, CallToolResponse, Implementation, ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerInfo},
+    schemars, service::RequestContext, tool, tool_router,
+};
 use serde::Deserialize;
 use std::sync::Arc;
 
@@ -209,6 +214,7 @@ fn d_true() -> bool { true }
 #[derive(Clone)]
 pub struct ErpServer {
     pub backend: Arc<dyn ErpBackend>,
+    pub auth: crate::auth::AuthConfig,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -238,7 +244,7 @@ pub struct IdBodyInput {
     pub body: serde_json::Value,
 }
 
-#[tool_router(server_handler)]
+#[tool_router]
 impl ErpServer {
     // ─── Customers ───────────────────────────────────────────────────────────
 
@@ -880,5 +886,44 @@ impl HealthCheck for ErpServer {
             Ok(_) => HealthStatus { healthy: true, message: Some(format!("{} connected", self.backend.name())), latency_ms: Some(1) },
             Err(e) => HealthStatus { healthy: false, message: Some(format!("{}: {e}", self.backend.name())), latency_ms: None },
         }
+    }
+}
+
+/// Manual handler so the trusted host's opaque credential-file reference can
+/// be stripped before typed tool arguments are decoded and bound to exactly
+/// one call. The bearer itself never traverses MCP.
+impl ServerHandler for ErpServer {
+    async fn call_tool(
+        &self,
+        mut request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResponse, ErrorData> {
+        let credential = request.arguments.as_mut().and_then(crate::auth::take_credential_file);
+        match self.auth.mode() {
+            crate::auth::AuthMode::Delegated if credential.is_none() => {
+                return Err(ErrorData::invalid_params("delegated tool call is missing its caller credential", None));
+            }
+            crate::auth::AuthMode::TrustedSingleUser if credential.is_some() => {
+                return Err(ErrorData::invalid_params("caller delegation is disabled in trusted-single-user mode", None));
+            }
+            _ => {}
+        }
+        let router = Self::tool_router();
+        let call = router.call(ToolCallContext::new(self, request, context));
+        crate::auth::scope_credential(credential, call).await
+    }
+
+    async fn list_tools(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListToolsResult, ErrorData> {
+        Ok(ListToolsResult::with_all_items(Self::tool_router().list_all()))
+    }
+
+    fn get_info(&self) -> ServerInfo {
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(Implementation::from_build_env())
+            .with_instructions("ERP access is authorization-sensitive. In delegated mode every call is bound to the verified caller and fails closed without that credential.".to_string())
     }
 }

@@ -1,10 +1,10 @@
 //! Zavora ERA REST backend.
 //!
-//! Auth is JWT-only with a short (15 min) access TTL, so the backend logs in
-//! with a service user's credentials and transparently re-logs-in when the
-//! cached token ages out or a request comes back 401. The tenant (entity_id)
-//! is taken from the login response and injected where endpoints require it
-//! (e.g. `/agent/report`).
+//! Authentication is explicit. Trusted single-user deployments may use a
+//! service login and refresh it. Shared agent deployments use delegated mode:
+//! each MCP call reads the verified caller's short-lived bearer from a private
+//! file and never falls back to the service account.
+use crate::auth::{AuthConfig, AuthMode};
 use crate::types::*;
 use anyhow::{Result, anyhow};
 use reqwest::{Client, Method};
@@ -24,9 +24,9 @@ struct AuthState {
 pub struct ZavoraBackend {
     http: Client,
     base: String,
-    email: String,
-    password: String,
+    service_credentials: Option<(String, String)>,
     auth: RwLock<Option<AuthState>>,
+    call_auth: AuthConfig,
 }
 
 /// Parse Zavora money/number fields, which arrive as JSON strings ("129.04").
@@ -53,21 +53,33 @@ fn map_doc_state(status: &str) -> LifecycleState {
 }
 
 impl ZavoraBackend {
-    pub fn new(base_url: String, email: String, password: String) -> Self {
+    pub fn trusted_single_user(base_url: String, email: String, password: String, call_auth: AuthConfig) -> Self {
         Self {
             http: Client::new(),
             base: format!("{}/api/v1", base_url.trim_end_matches('/')),
-            email,
-            password,
+            service_credentials: Some((email, password)),
             auth: RwLock::new(None),
+            call_auth,
+        }
+    }
+
+    pub fn delegated(base_url: String, call_auth: AuthConfig) -> Self {
+        Self {
+            http: Client::new(),
+            base: format!("{}/api/v1", base_url.trim_end_matches('/')),
+            service_credentials: None,
+            auth: RwLock::new(None),
+            call_auth,
         }
     }
 
     async fn login(&self) -> Result<(String, String)> {
+        let (email, password) = self.service_credentials.as_ref()
+            .ok_or_else(|| anyhow!("service login is disabled in delegated mode"))?;
         let resp = self
             .http
             .post(format!("{}/auth/login", self.base))
-            .json(&json!({"email": self.email, "password": self.password}))
+            .json(&json!({"email": email, "password": password}))
             .send()
             .await?;
         if !resp.status().is_success() {
@@ -97,22 +109,25 @@ impl ZavoraBackend {
     }
 
     async fn request(&self, method: Method, path: &str, body: Option<&Value>) -> Result<Value> {
-        let (mut token, _) = self.credentials().await?;
-        for attempt in 0..2 {
-            let mut req = self
+        let (mut token, may_refresh_service) = match self.call_auth.mode() {
+            AuthMode::Delegated => (self.call_auth.delegated_bearer().await?, false),
+            AuthMode::TrustedSingleUser => (self.credentials().await?.0, true),
+        };
+        for attempt in 0..=usize::from(may_refresh_service) {
+            let mut request = self
                 .http
                 .request(method.clone(), format!("{}/{path}", self.base))
-                .header("Authorization", format!("Bearer {token}"));
-            if let Some(b) = body {
-                req = req.json(b);
+                .bearer_auth(&token);
+            if let Some(value) = body {
+                request = request.json(value);
             }
-            let resp = req.send().await?;
-            let status = resp.status();
-            if status == reqwest::StatusCode::UNAUTHORIZED && attempt == 0 {
-                (token, _) = self.login().await?;
+            let response = request.send().await?;
+            let status = response.status();
+            if status == reqwest::StatusCode::UNAUTHORIZED && may_refresh_service && attempt == 0 {
+                token = self.login().await?.0;
                 continue;
             }
-            let text = resp.text().await?;
+            let text = response.text().await?;
             if !status.is_success() {
                 return Err(anyhow!("Zavora API {status} on {path}: {text}"));
             }
@@ -520,7 +535,12 @@ impl ErpBackend for ZavoraBackend {
     }
 
     async fn run_report(&self, report_type: &str, as_at: Option<&str>, from: Option<&str>, to: Option<&str>) -> Result<Value> {
-        let (_, entity_id) = self.credentials().await?;
+        // The API overwrites this compatibility field with the verified JWT's
+        // entity_id. Never infer or trust a tenant identifier in the MCP layer.
+        let entity_id = match self.call_auth.mode() {
+            AuthMode::TrustedSingleUser => self.credentials().await?.1,
+            AuthMode::Delegated => "00000000-0000-0000-0000-000000000000".to_string(),
+        };
         let body = json!({
             "entity_id": entity_id,
             "report_type": report_type,
@@ -669,4 +689,47 @@ impl ErpBackend for ZavoraBackend {
     async fn import_bank_statement(&self, body: &Value) -> Result<Value> { self.post("bank/import", body).await }
     async fn list_budgets(&self) -> Result<Value> { self.get("budgets").await }
     async fn set_budget(&self, body: &Value) -> Result<Value> { self.put("budgets", body).await }
+}
+
+#[cfg(test)]
+mod security_tests {
+    use super::*;
+    use std::io::Write as _;
+    use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn delegated_unauthorized_response_never_falls_back_to_service_login() {
+        use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+        let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!("mcp-erp-zavora-{nonce}"));
+        std::fs::DirBuilder::new().mode(0o700).create(&root).unwrap();
+        let credential = root.join("caller.jwt");
+        let mut file = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&credential).unwrap();
+        file.write_all(b"aaa.bbb.ccc").unwrap();
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let requests = Arc::new(AtomicUsize::new(0));
+        let observed = requests.clone();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0_u8; 4096];
+            let size = stream.read(&mut request).await.unwrap();
+            observed.fetch_add(1, Ordering::SeqCst);
+            let text = String::from_utf8_lossy(&request[..size]);
+            assert!(text.starts_with("GET /api/v1/dashboard "));
+            assert!(text.contains("authorization: Bearer aaa.bbb.ccc"));
+            stream.write_all(b"HTTP/1.1 401 Unauthorized\r\ncontent-length: 12\r\nconnection: close\r\n\r\nunauthorized").await.unwrap();
+        });
+
+        let config = AuthConfig::delegated(root.clone()).unwrap();
+        let backend = ZavoraBackend::delegated(format!("http://{address}"), config);
+        let result = crate::auth::scope_credential(Some(credential), backend.get("dashboard")).await;
+        server.await.unwrap();
+        assert!(result.unwrap_err().to_string().contains("401"));
+        assert_eq!(requests.load(Ordering::SeqCst), 1, "delegated calls must never retry as a service user");
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

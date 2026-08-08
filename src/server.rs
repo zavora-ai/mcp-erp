@@ -5,7 +5,7 @@ use rmcp::{
     ErrorData, RoleServer, ServerHandler,
     handler::server::{tool::ToolCallContext, wrapper::Parameters},
     model::{
-        CallToolRequestParams, CallToolResult, ListToolsResult, PaginatedRequestParams,
+        CallToolRequestParams, CallToolResponse, ListToolsResult, PaginatedRequestParams,
         ServerCapabilities, ServerInfo,
     },
     schemars,
@@ -937,7 +937,7 @@ impl ServerHandler for ErpServer {
         &self,
         mut request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
-    ) -> Result<CallToolResult, ErrorData> {
+    ) -> Result<CallToolResponse, ErrorData> {
         // Extract + strip `__user_token` BEFORE the typed tool input
         // deserializes (serde would silently drop the unknown field otherwise),
         // then run the tool with it bound to the task-local so `ZavoraBackend`
@@ -957,7 +957,7 @@ impl ServerHandler for ErpServer {
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
-        Ok(ListToolsResult { tools: Self::tool_router().list_all(), meta: None, next_cursor: None })
+        Ok(ListToolsResult::with_all_items(Self::tool_router().list_all()))
     }
 
     fn get_info(&self) -> ServerInfo {

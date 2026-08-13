@@ -476,3 +476,22 @@ Built with ❤️ by [Zavora AI](https://zavora.ai)
 ## rmcp and MCP compatibility
 
 This server is built with [`rmcp` 3.1.2](https://github.com/modelcontextprotocol/rust-sdk/releases/tag/rmcp-v3.1.2) and has an MSRV of Rust 1.94.1. The rmcp 3 rollout retains legacy MCP initialization compatibility and targets MCP protocol revisions `2025-11-25` and `2026-07-28`.
+
+For 2026-07-28 clients, `server/discover` is available without initialization.
+`run_report`, payroll, statement import, depreciation, and FX revaluation may
+return SEP-2663 task handles with a 15-minute TTL and 500 ms suggested poll
+interval; clients can poll or cancel them. Legacy clients receive the same work
+synchronously. Depreciation and FX posting also use stateless MRTR approval:
+the server seals `requestState`, binds it to the exact arguments and delegated
+credential reference, and expires it after two minutes. Amos supplies its
+code-level confirmation proof after the user approves, so the extra MRTR round
+is not needed in that already-gated path.
+
+MCP task state is currently process-local: polling survives a transport
+reconnect to the same process, but not process replacement or cross-replica
+routing. Tool discovery responses carry a one-hour public cache TTL.
+
+Set a stable, high-entropy `MCP_ERP_REQUEST_STATE_KEY` in production so an MRTR
+round can resume after process replacement. `MCP_ERP_UNATTENDED=true` is only
+for the separately isolated trusted service process; never set it on Amos's
+interactive delegated process.

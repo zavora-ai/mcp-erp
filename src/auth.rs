@@ -15,6 +15,8 @@ use std::path::{Path, PathBuf};
 /// Hidden argument injected by a trusted MCP host after model generation.
 /// It is removed before typed tool arguments are deserialized.
 pub const CREDENTIAL_FILE_ARG: &str = "__credential_file";
+/// Hidden proof injected only after the host's code-level approval gate.
+pub const USER_CONFIRMED_ARG: &str = "__user_confirmed";
 
 tokio::task_local! {
     static CREDENTIAL_FILE: Option<PathBuf>;
@@ -158,6 +160,13 @@ pub fn take_credential_file(
     }
 }
 
+pub fn take_user_confirmation(arguments: &mut serde_json::Map<String, serde_json::Value>) -> bool {
+    matches!(
+        arguments.remove(USER_CONFIRMED_ARG),
+        Some(serde_json::Value::Bool(true))
+    )
+}
+
 pub fn current_credential_file() -> Option<PathBuf> {
     CREDENTIAL_FILE.try_with(Clone::clone).ok().flatten()
 }
@@ -187,6 +196,17 @@ mod tests {
         );
         assert!(!args.contains_key(CREDENTIAL_FILE_ARG));
         assert_eq!(args["id"], "invoice-1");
+    }
+
+    #[test]
+    fn approval_proof_is_hidden_and_must_be_true() {
+        let mut args = json!({USER_CONFIRMED_ARG: true}).as_object().unwrap().clone();
+        assert!(take_user_confirmation(&mut args));
+        assert!(!args.contains_key(USER_CONFIRMED_ARG));
+
+        let mut false_args = json!({USER_CONFIRMED_ARG: false}).as_object().unwrap().clone();
+        assert!(!take_user_confirmation(&mut false_args));
+        assert!(!false_args.contains_key(USER_CONFIRMED_ARG));
     }
 
     #[cfg(unix)]

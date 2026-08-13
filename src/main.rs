@@ -1,20 +1,20 @@
 //! mcp-erp — Enterprise ERP MCP Server
-mod types;
-mod server;
 mod auth;
+mod server;
+mod types;
 
-#[cfg(feature = "zavora")]
-mod zavora;
-#[cfg(feature = "zoho")]
-mod zoho;
-#[cfg(feature = "odoo")]
-mod odoo;
 #[cfg(feature = "business-central")]
 mod business_central;
 #[cfg(feature = "netsuite")]
 mod netsuite;
+#[cfg(feature = "odoo")]
+mod odoo;
 #[cfg(feature = "sap")]
 mod sap;
+#[cfg(feature = "zavora")]
+mod zavora;
+#[cfg(feature = "zoho")]
+mod zoho;
 
 use rmcp::{ServiceExt, transport::stdio};
 use server::ErpServer;
@@ -39,14 +39,21 @@ async fn main() -> anyhow::Result<()> {
         .iter()
         .map(std::path::PathBuf::from)
         .chain(std::env::current_exe().ok().and_then(|exe| {
-            exe.parent().and_then(|p| p.parent()).and_then(|p| p.parent()).map(|root| root.join("mcp-server.toml"))
+            exe.parent()
+                .and_then(|p| p.parent())
+                .and_then(|p| p.parent())
+                .map(|root| root.join("mcp-server.toml"))
         }))
         .find(|p| p.exists())
-        .ok_or_else(|| anyhow::anyhow!("mcp-server.toml not found in cwd or next to the executable"))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!("mcp-server.toml not found in cwd or next to the executable")
+        })?;
     let manifest = adk_mcp_sdk::ServerManifest::from_file(&manifest_path)?;
     let errors = manifest.validate();
     if !errors.is_empty() {
-        for e in &errors { tracing::error!("manifest: {e}"); }
+        for e in &errors {
+            tracing::error!("manifest: {e}");
+        }
         anyhow::bail!("invalid mcp-server.toml ({} error(s))", errors.len());
     }
 
@@ -57,8 +64,25 @@ async fn main() -> anyhow::Result<()> {
     // Backend selection — first configured wins
     let backend: Arc<dyn types::ErpBackend> = init_backend(&auth).await?;
 
-    tracing::info!("{} v{} starting on stdio (backend: {})", manifest.display_name, manifest.version, backend.name());
-    let server = ErpServer { backend, auth };
+    tracing::info!(
+        "{} v{} starting on stdio (backend: {})",
+        manifest.display_name,
+        manifest.version,
+        backend.name()
+    );
+    let server = ErpServer {
+        backend,
+        auth,
+        tasks: rmcp::task_manager::TaskManager::new(),
+        request_state: rmcp::model::RequestStateCodec::new(
+            std::env::var("MCP_ERP_REQUEST_STATE_KEY").unwrap_or_else(|_| {
+                tracing::warn!(
+                    "MCP_ERP_REQUEST_STATE_KEY is unset; MRTR approvals will not survive a process restart"
+                );
+                format!("{}{}", uuid::Uuid::new_v4(), uuid::Uuid::new_v4())
+            }),
+        ),
+    };
     let service = server.serve(stdio()).await?;
     service.waiting().await?;
     Ok(())
@@ -70,17 +94,27 @@ async fn init_backend(auth: &auth::AuthConfig) -> anyhow::Result<Arc<dyn types::
     if let Ok(url) = std::env::var("ZAVORA_API_URL") {
         tracing::info!("Using Zavora ERA backend at {url}");
         return match auth.mode() {
-            auth::AuthMode::Delegated => Ok(Arc::new(zavora::ZavoraBackend::delegated(url, auth.clone()))),
+            auth::AuthMode::Delegated => Ok(Arc::new(zavora::ZavoraBackend::delegated(
+                url,
+                auth.clone(),
+            ))),
             auth::AuthMode::TrustedSingleUser => {
                 let email = std::env::var("ZAVORA_EMAIL")?;
                 let pass = std::env::var("ZAVORA_PASSWORD")?;
-                Ok(Arc::new(zavora::ZavoraBackend::trusted_single_user(url, email, pass, auth.clone())))
+                Ok(Arc::new(zavora::ZavoraBackend::trusted_single_user(
+                    url,
+                    email,
+                    pass,
+                    auth.clone(),
+                )))
             }
         };
     }
 
     if auth.is_delegated() {
-        anyhow::bail!("delegated authentication currently requires the Zavora backend and ZAVORA_API_URL");
+        anyhow::bail!(
+            "delegated authentication currently requires the Zavora backend and ZAVORA_API_URL"
+        );
     }
 
     // Zoho
@@ -92,23 +126,45 @@ async fn init_backend(auth: &auth::AuthConfig) -> anyhow::Result<Arc<dyn types::
 
     // Odoo
     #[cfg(feature = "odoo")]
-    if let (Ok(url), Ok(db), Ok(user), Ok(pass)) = (std::env::var("ODOO_URL"), std::env::var("ODOO_DB"), std::env::var("ODOO_USER"), std::env::var("ODOO_PASSWORD")) {
+    if let (Ok(url), Ok(db), Ok(user), Ok(pass)) = (
+        std::env::var("ODOO_URL"),
+        std::env::var("ODOO_DB"),
+        std::env::var("ODOO_USER"),
+        std::env::var("ODOO_PASSWORD"),
+    ) {
         tracing::info!("Connecting to Odoo at {url}");
-        return Ok(Arc::new(odoo::OdooBackend::connect(url, db, user, pass).await?));
+        return Ok(Arc::new(
+            odoo::OdooBackend::connect(url, db, user, pass).await?,
+        ));
     }
 
     // Business Central
     #[cfg(feature = "business-central")]
-    if let (Ok(tenant), Ok(env), Ok(company), Ok(token)) = (std::env::var("BC_TENANT_ID"), std::env::var("BC_ENVIRONMENT"), std::env::var("BC_COMPANY_ID"), std::env::var("BC_TOKEN")) {
+    if let (Ok(tenant), Ok(env), Ok(company), Ok(token)) = (
+        std::env::var("BC_TENANT_ID"),
+        std::env::var("BC_ENVIRONMENT"),
+        std::env::var("BC_COMPANY_ID"),
+        std::env::var("BC_TOKEN"),
+    ) {
         tracing::info!("Using Business Central backend");
-        return Ok(Arc::new(business_central::BusinessCentralBackend::new(tenant, env, company, token)));
+        return Ok(Arc::new(business_central::BusinessCentralBackend::new(
+            tenant, env, company, token,
+        )));
     }
 
     // NetSuite
     #[cfg(feature = "netsuite")]
-    if let (Ok(acct), Ok(ck), Ok(cs), Ok(ti), Ok(ts)) = (std::env::var("NETSUITE_ACCOUNT_ID"), std::env::var("NETSUITE_CONSUMER_KEY"), std::env::var("NETSUITE_CONSUMER_SECRET"), std::env::var("NETSUITE_TOKEN_ID"), std::env::var("NETSUITE_TOKEN_SECRET")) {
+    if let (Ok(acct), Ok(ck), Ok(cs), Ok(ti), Ok(ts)) = (
+        std::env::var("NETSUITE_ACCOUNT_ID"),
+        std::env::var("NETSUITE_CONSUMER_KEY"),
+        std::env::var("NETSUITE_CONSUMER_SECRET"),
+        std::env::var("NETSUITE_TOKEN_ID"),
+        std::env::var("NETSUITE_TOKEN_SECRET"),
+    ) {
         tracing::info!("Using NetSuite backend");
-        return Ok(Arc::new(netsuite::NetSuiteBackend::new(acct, ck, cs, ti, ts)));
+        return Ok(Arc::new(netsuite::NetSuiteBackend::new(
+            acct, ck, cs, ti, ts,
+        )));
     }
 
     // SAP
@@ -118,5 +174,7 @@ async fn init_backend(auth: &auth::AuthConfig) -> anyhow::Result<Arc<dyn types::
         return Ok(Arc::new(sap::SapBackend::new(url, token)));
     }
 
-    anyhow::bail!("No ERP backend configured. Set env vars for one of: ZAVORA_API_URL (+ ZAVORA_EMAIL+ZAVORA_PASSWORD in trusted-single-user mode), ZOHO_TOKEN+ZOHO_ORG_ID, ODOO_URL+ODOO_DB+ODOO_USER+ODOO_PASSWORD, BC_TENANT_ID+BC_ENVIRONMENT+BC_COMPANY_ID+BC_TOKEN, NETSUITE_ACCOUNT_ID+..., SAP_BASE_URL+SAP_TOKEN")
+    anyhow::bail!(
+        "No ERP backend configured. Set env vars for one of: ZAVORA_API_URL (+ ZAVORA_EMAIL+ZAVORA_PASSWORD in trusted-single-user mode), ZOHO_TOKEN+ZOHO_ORG_ID, ODOO_URL+ODOO_DB+ODOO_USER+ODOO_PASSWORD, BC_TENANT_ID+BC_ENVIRONMENT+BC_COMPANY_ID+BC_TOKEN, NETSUITE_ACCOUNT_ID+..., SAP_BASE_URL+SAP_TOKEN"
+    )
 }

@@ -4,6 +4,7 @@
 //! SAP, NetSuite, Odoo, Business Central, and Zoho.
 pub mod server;
 pub mod types;
+pub mod auth;
 pub mod business_central;
 pub mod netsuite;
 pub mod odoo;

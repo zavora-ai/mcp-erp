@@ -190,17 +190,53 @@ cargo install mcp-erp --no-default-features --features "zoho,business-central"
 
 ## Configuration
 
+Set `MCP_ERP_AUTH_MODE=trusted-single-user` for Zoho, Odoo, Business Central,
+NetSuite, and SAP. Those adapters use the configured provider credential and
+must run as a private stdio process controlled by that credential's owner.
+
 ### Zavora ERA
 
+Every deployment must select an authentication boundary. A personal stdio
+process may use a least-privilege service/user login:
+
 ```bash
+export MCP_ERP_AUTH_MODE="trusted-single-user"
 export ZAVORA_API_URL="http://localhost:8080"
-export ZAVORA_EMAIL="agent@company.co.ke"     # service user
-export ZAVORA_PASSWORD="secret"               # JWT login; token auto-refreshes
+export ZAVORA_EMAIL="user@company.co.ke"
+export ZAVORA_PASSWORD="secret"
 ```
+
+Do not expose that process to multiple users. Shared hosts such as Amos must
+use delegated mode instead:
+
+```bash
+export MCP_ERP_AUTH_MODE="delegated"
+export MCP_ERP_CREDENTIAL_DIR="/run/amos/mcp-credentials" # directory mode 0700
+export ZAVORA_API_URL="http://localhost:8080"
+```
+
+In delegated mode the trusted host injects only an opaque path to a private
+`0600` bearer file after model generation. The JWT is absent from tool schemas
+and MCP messages. Every call requires that credential, and a rejected or
+expired user token is returned as an error—mcp-erp never retries with a service
+account. Delegated mode currently supports the Zavora backend only.
 
 Build with `--features zavora`. The Zavora backend also implements the
 accounting extension tools below (bills, payments with Kenyan WHT, financial
 reports, dashboard, bank accounts, manual journals).
+
+### Authorization and object IDs
+
+MCP stdio does not authenticate an end user. The selected ERP credential is
+therefore the authorization boundary: upstream ERP APIs must derive tenant and
+role from that verified credential and scope every object lookup by tenant.
+Approval prompts are not authorization checks. Never run a
+`trusted-single-user` process behind a shared agent, and never grant its ERP
+credential broader access than its owner needs.
+
+`mcp-erp` deliberately requires `MCP_ERP_AUTH_MODE`; startup fails when it is
+missing. Non-Zavora backends currently support trusted single-user deployments
+only and must not be shared until they have a caller-delegation adapter.
 
 ### Zoho Books
 
@@ -439,4 +475,23 @@ Built with ❤️ by [Zavora AI](https://zavora.ai)
 
 ## rmcp and MCP compatibility
 
-This server is built with [`rmcp` 3.1.2](https://github.com/modelcontextprotocol/rust-sdk/releases/tag/rmcp-v3.1.2) and requires Rust 1.88 or newer. The rmcp 3 rollout retains legacy MCP initialization compatibility and targets MCP protocol revisions `2025-11-25` and `2026-07-28`.
+This server is built with [`rmcp` 3.1.2](https://github.com/modelcontextprotocol/rust-sdk/releases/tag/rmcp-v3.1.2) and has an MSRV of Rust 1.94.1. The rmcp 3 rollout retains legacy MCP initialization compatibility and targets MCP protocol revisions `2025-11-25` and `2026-07-28`.
+
+For 2026-07-28 clients, `server/discover` is available without initialization.
+`run_report`, payroll, statement import, depreciation, and FX revaluation may
+return SEP-2663 task handles with a 15-minute TTL and 500 ms suggested poll
+interval; clients can poll or cancel them. Legacy clients receive the same work
+synchronously. Depreciation and FX posting also use stateless MRTR approval:
+the server seals `requestState`, binds it to the exact arguments and delegated
+credential reference, and expires it after two minutes. Amos supplies its
+code-level confirmation proof after the user approves, so the extra MRTR round
+is not needed in that already-gated path.
+
+MCP task state is currently process-local: polling survives a transport
+reconnect to the same process, but not process replacement or cross-replica
+routing. Tool discovery responses carry a one-hour public cache TTL.
+
+Set a stable, high-entropy `MCP_ERP_REQUEST_STATE_KEY` in production so an MRTR
+round can resume after process replacement. `MCP_ERP_UNATTENDED=true` is only
+for the separately isolated trusted service process; never set it on Amos's
+interactive delegated process.
